@@ -1,4 +1,0 @@
-Dependencies for Project 'lab10', Target 'EA LPC2148': (DO NOT MODIFY !)
-F (.\Startup.s)(0x4D98451F)(--cpu ARM7TDMI --pd "__EVAL SETA 1" -g --apcs=interwork -I C:\Keil_v5\ARM\RV31\Inc -I C:\Keil_v5\ARM\CMSIS\Include -I C:\Keil_v5\ARM\Inc\Philips --list "Startup.lst" --xref -o "Startup.o" --depend "Startup.d")
-F (.\main.c)(0x683F18C7)(-c --cpu ARM7TDMI -D__EVAL -g -O0 --apcs=interwork -I C:\Keil_v5\ARM\RV31\Inc -I C:\Keil_v5\ARM\CMSIS\Include -I C:\Keil_v5\ARM\Inc\Philips -o "main.o" --omf_browse "main.crf" --depend "main.d")
-I (C:\Keil_v5\ARM\Inc\Philips\LPC214x.h)(0x4F588BDC)

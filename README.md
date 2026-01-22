@@ -1,66 +1,92 @@
-# lpc2148-led-matrix-draw
-## LPC2148 LED Matrix Drawing Application
+# LPC2148 LED Matrix Cursor Control
 
-This project implements a simple drawing application using an **8x8 LED matrix**, **joystick**, and **16x2 LCD display**, all controlled by an **LPC2148 ARM7 microcontroller**.
+Bare-metal embedded application for the **NXP LPC2148 (ARM7TDMI-S)** demonstrating
+GPIO, SPI communication, and basic human-machine interaction.
 
-- **LED Matrix (8x8)** via **SPI**
-- **Joystick** via **GPIO**
-- **LCD 16x2** via **parallel GPIO (custom interface)**
-- **Draw mode**: Press the joystick button to center/reset the cursor (or adapt to toggle pixel)
+The system controls an **8×8 LED matrix**, reads a **joystick**, and displays
+cursor coordinates on a **16×2 LCD**.
 
 ---
 
 ## Features
 
-- Move a cursor around the 8x8 LED matrix using the joystick.
-- View the current `(X, Y)` position on a 16x2 LCD.
-- Center/reset cursor by pressing the joystick button.
-- Code includes SPI initialization, LCD control, and GPIO configuration.
-- Designed for educational or embedded systems experimentation.
+- Move a cursor on an 8×8 LED matrix using a joystick
+- Display current `(X, Y)` position on a 16×2 LCD
+- Center/reset cursor using joystick button
+- SPI communication with LED matrix
+- Direct GPIO control (no OS, no HAL)
+- Designed for educational / laboratory use
 
 ---
 
-## Components Used
+## Hardware Components
 
-| Component        | Interface | Description                      |
-|------------------|-----------|----------------------------------|
-| LPC2148 MCU      | -         | ARM7TDMI-S Microcontroller       |
-| 8x8 LED Matrix   | SPI       | Controlled via `spi_send()`      |
-| 16x2 LCD         | GPIO      | Uses custom control/data pins    |
-| Joystick         | GPIO      | 5 directions (Up, Down, Left, Right, Center) |
+| Component        | Interface | Notes |
+|------------------|-----------|-------|
+| LPC2148 MCU      | —         | ARM7TDMI-S |
+| 8×8 LED Matrix   | SPI (GPIO / bit-banged) | Single LED active at a time |
+| 16×2 LCD         | GPIO      | Custom parallel interface |
+| Joystick         | GPIO      | Active-low inputs |
 
 ---
 
 ## How It Works
 
-- **SPI Initialization**: Communicates with LED matrix.
-- **LCD Initialization**: Uses GPIO pins to send commands/data.
-- **Joystick Handling**: Reads direction inputs from GPIO (active low).
-- **Cursor Movement**: Updates `x` and `y` based on joystick input.
-- **Drawing**: Calls `light_dot(x, y)` to light a single LED.
+- **SPI / GPIO**  
+  Sends row/column data to the LED matrix using software SPI.
+
+- **LCD Control**  
+  Commands and data are sent through GPIO using custom routines.
+
+- **Joystick Handling**  
+  Direction inputs are read from GPIO pins and mapped to cursor movement.
+
+- **Cursor Logic**  
+  Updates `(x, y)` coordinates and lights the corresponding LED.
 
 ---
 
 ## Pin Configuration
 
-### Joystick (Active Low - Input GPIO)
+### Joystick (Active-Low GPIO)
 
-| Direction | Pin        |
-|-----------|------------|
-| UP        | P0.20      |
-| DOWN      | P0.17      |
-| LEFT      | P0.18      |
-| RIGHT     | P0.19      |
-| CENTER    | P0.16      |
+| Direction | Pin   |
+|----------|-------|
+| UP       | P0.20 |
+| DOWN     | P0.17 |
+| LEFT     | P0.18 |
+| RIGHT    | P0.19 |
+| CENTER   | P0.16 |
 
-### SPI - LED Matrix
+> ⚠️ Note: GPIO pins are reused for multiple functions. SPI communication is
+> implemented via software (bit-banging) and time-multiplexed with input handling.
 
-| Signal     | Pin        |
-|------------|------------|
-| CS         | P0.15      |
-| MOSI       | P0.18      |
-| SCK        | P0.17      |
+### LCD
 
-### LCD - GPIO Mapping
+- Connected to **GPIO Port 1**
+- Control/data lines handled in `sendCommand()` and `sendData()`
 
-LCD pins are connected to GPIO Port 1 (P1.xx). Details are abstracted in `sendCommand()` and `sendData()`.
+---
+
+## Project Structure
+
+- src/ Application source code
+- linker/ Linker script
+- keil/ Keil µVision project files
+
+
+---
+
+## Build & Run
+
+1. Open `keil/lab10.uvproj` in **Keil µVision**
+2. Build the project
+3. Flash to LPC2148 using ULINK (or compatible programmer)
+
+---
+
+## Notes
+
+This project focuses on **low-level embedded programming** and intentionally avoids
+libraries or abstraction layers to demonstrate direct hardware control.
+

@@ -1,165 +1,147 @@
-#include <LPC214x.H> 
+#include <LPC214x.H>
 
-#define clearDisplay      0x1
-#define homeDC            0x2
-#define incrementNoShift  0x6
-#define cursorUB          0xF
-#define operationMode     0x3C
+#define LCD_CLEAR       0x01
+#define LCD_HOME        0x02
+#define LCD_ENTRY_INC   0x06
+#define LCD_ON_CURSOR   0x0F
+#define LCD_8BIT_2LINE  0x3C
+#define LCD_LINE1       0x80
+#define LCD_LINE2       0xC0
 
-// SPI chip select pin P0.15
-#define CS_PIN (1 << 15)
+// SPI CS on P0.15 (GPIO)
+#define CS_PIN          (1U << 15)
 
-// Joystick pins (active low)
-#define JOY_UP    (1 << 20)
-#define JOY_DOWN  (1 << 17)
-#define JOY_LEFT  (1 << 18)
-#define JOY_RIGHT (1 << 19)
-#define JOY_BUTTON (1 << 16)
+// Joystick (active low)
+#define JOY_UP          (1U << 20)
+#define JOY_DOWN        (1U << 17)
+#define JOY_LEFT        (1U << 18)
+#define JOY_RIGHT       (1U << 19)
+#define JOY_BUTTON      (1U << 16)
 
-void delay(void) {
-    unsigned int i,j;
-    for(i=0;i<100;i++)
-        for(j=0;j<100;j++);
+// LCD on Port 1: RS=P1.24, E=P1.25, D0..D7=P1.16..P1.23
+#define LCD_RS          (1U << 24)
+#define LCD_E           (1U << 25)
+#define LCD_DATA_SHIFT  16
+#define LCD_DATA_MASK   (0xFFU << LCD_DATA_SHIFT)
+
+static void delay_short(void) {
+    volatile unsigned int i, j;
+    for (i = 0; i < 100; i++) for (j = 0; j < 100; j++) { }
 }
 
-void spi_init() {
-    PINSEL0 = 0x1500; // Set P0.15,16,17 as SPI pins (datasheet)
-    IO0DIR |= CS_PIN; // CS as output
-    IO0SET |= CS_PIN; // CS high
-    S0SPCR = (1 << 5) | (1 << 7); // SPI enable, master mode
-    S0SPCCR = 8; // Clock rate
+static void delay_pulse(void) {
+    volatile unsigned int i;
+    for (i = 0; i < 1000; i++) { }
 }
 
-void spi_send(unsigned char data1, unsigned char data2) {
-    IO0CLR = CS_PIN; // CS low
-    S0SPDR = data1;
-    while (!(S0SPSR & (1 << 7)));
-    S0SPDR = data2;
-    while (!(S0SPSR & (1 << 7)));
-    IO0SET = CS_PIN; // CS high
+static void spi_init(void) {
+    // PINSEL0 = 0x1500 sets P0.4..P0.6 to SPI0 (SCK0, MISO0, MOSI0)
+    PINSEL0 = 0x1500;
+
+    IO0DIR |= CS_PIN;
+    IO0SET  = CS_PIN;
+
+    S0SPCR  = (1U << 5) | (1U << 7); // master + enable
+    S0SPCCR = 8;                     // clock divider
 }
 
-void light_dot(unsigned char x, unsigned char y) {
-    // Rows and cols are active low on matrix, so invert bit at position
-    unsigned char row_data = ~(1 << y);
-    unsigned char col_data = ~(1 << x);
-    spi_send(row_data, col_data);
+static void spi_send(unsigned char a, unsigned char b) {
+    IO0CLR = CS_PIN;
+
+    S0SPDR = a;
+    while (!(S0SPSR & (1U << 7))) { }
+
+    S0SPDR = b;
+    while (!(S0SPSR & (1U << 7))) { }
+
+    IO0SET = CS_PIN;
 }
 
-void enable()
-{
-    int i;
-    for(i=0;i<1000;) { i++; }
-    IOCLR1 |= 1<<25;
-    for(i=0;i<1000;) { i++; }
-    IOSET1 |= 1<<25;
+static void light_dot(unsigned char x, unsigned char y) {
+    unsigned char row = (unsigned char)~(1U << y);
+    unsigned char col = (unsigned char)~(1U << x);
+    spi_send(row, col);
 }
 
-void sendCommand(int command)
-{
-    IOCLR1 |= 1<<24;
-    IOCLR1 |= 0xFF0000;
-    IOSET1 |= command<<16;
-    enable();
+static void lcd_pulse(void) {
+    delay_pulse();
+    IOCLR1 = LCD_E;
+    delay_pulse();
+    IOSET1 = LCD_E;
 }
 
-void sendData(int data)
-{
-    IOSET1 |= 1<<24;
-    IOCLR1 |= 0xFF0000;
-    IOSET1 |= data<<16;    
-    enable();
+static void lcd_cmd(unsigned char cmd) {
+    IOCLR1 = LCD_RS;
+    IOCLR1 = LCD_DATA_MASK;
+    IOSET1 = ((unsigned int)cmd << LCD_DATA_SHIFT);
+    lcd_pulse();
 }
 
-void configGpios()
-{
-    IODIR0 |= 1<<30;
-    IOSET0 = 1<<30;
+static void lcd_data(unsigned char data) {
+    IOSET1 = LCD_RS;
+    IOCLR1 = LCD_DATA_MASK;
+    IOSET1 = ((unsigned int)data << LCD_DATA_SHIFT);
+    lcd_pulse();
+}
 
-    IODIR0 |= 1<<22;
-    IOCLR0 |= 1<<22;
+static void lcd_puts(const char *s) {
+    while (*s) lcd_data((unsigned char)*s++);
+}
 
-    IODIR1 |= 0x3FF0000; // LCD control/data pins
+static char digit(unsigned char v) {
+    return (char)('0' + (v % 10));
+}
 
-    IOSET1 |= 1<<25;
+static void gpio_init(void) {
+    IODIR0 |= (1U << 30);
+    IOSET0  = (1U << 30);
 
-    // Configure joystick pins as input
+    IODIR0 |= (1U << 22);
+    IOCLR0  = (1U << 22);
+
+    IODIR1 |= (LCD_DATA_MASK | LCD_RS | LCD_E);
+    IOSET1  = LCD_E;
+
     IO0DIR &= ~(JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT | JOY_BUTTON);
 }
 
-void sendString(char *text)
-{
-    int i=0;
-    while(text[i]!='\0')
-    {
-        sendData(text[i]);
-        i++;
-    }
+static void lcd_init(void) {
+    lcd_cmd(LCD_8BIT_2LINE);
+    lcd_cmd(LCD_ON_CURSOR);
+    lcd_cmd(LCD_ENTRY_INC);
+    lcd_cmd(LCD_CLEAR);
+    lcd_cmd(LCD_HOME);
 }
 
-// Convert single digit number to ASCII
-char numToChar(int num) {
-    return (char)(num + '0');
+static void lcd_show_xy(unsigned char x, unsigned char y) {
+    lcd_cmd(LCD_LINE1);
+    lcd_puts("X: ");
+    lcd_data((unsigned char)digit(x));
+    lcd_puts("   ");
+
+    lcd_cmd(LCD_LINE2);
+    lcd_puts("Y: ");
+    lcd_data((unsigned char)digit(y));
+    lcd_puts("   ");
 }
 
-int main(void)
-{
+int main(void) {
     unsigned char x = 3, y = 3;
 
     spi_init();
-    configGpios();
+    gpio_init();
+    lcd_init();
 
-    // Init LCD
-    sendCommand(operationMode);
-    sendCommand(cursorUB);
-    sendCommand(incrementNoShift);
-    sendCommand(clearDisplay);
-    sendCommand(homeDC);
+    while (1) {
+        if (!(IO0PIN & JOY_UP))    { if (y > 0) y--; delay_short(); }
+        if (!(IO0PIN & JOY_DOWN))  { if (y < 7) y++; delay_short(); }
+        if (!(IO0PIN & JOY_LEFT))  { if (x > 0) x--; delay_short(); }
+        if (!(IO0PIN & JOY_RIGHT)) { if (x < 7) x++; delay_short(); }
+        if (!(IO0PIN & JOY_BUTTON)){ x = 3; y = 3; delay_short(); }
 
-    while(1)
-    {
-        // Read joystick (active low)
-        if (!(IO0PIN & JOY_UP)) {
-            if (y > 0) y--;
-            delay();
-        }
-        if (!(IO0PIN & JOY_DOWN)) {
-            if (y < 7) y++;
-            delay();
-        }
-        if (!(IO0PIN & JOY_LEFT)) {
-            if (x > 0) x--;
-            delay();
-        }
-        if (!(IO0PIN & JOY_RIGHT)) {
-            if (x < 7) x++;
-            delay();
-        }
-        if (!(IO0PIN & JOY_BUTTON)) {
-            x = 3;
-            y = 3;
-            delay();
-        }
-
-        // Update LED matrix dot
         light_dot(x, y);
+        lcd_show_xy(x, y);
 
-        // Update LCD display carefully with delays
-        sendCommand(clearDisplay);
-        delay();
-
-        sendCommand(homeDC);
-        delay();
-
-        sendString("X: ");
-        sendData(numToChar(x));
-
-        sendCommand(0xC0); // move to second line
-        delay();
-
-        sendString("Y: ");
-        sendData(numToChar(y));
-
-        delay();
+        delay_short();
     }
 }
